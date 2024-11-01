@@ -1,140 +1,153 @@
 #!/usr/bin/env python3
 
-from concurrent.futures import ThreadPoolExecutor
-import random
+import lib
+from lib import Node, Robot, World
+import math
 
-class Node:
-    def __init__(self):
-        self.neighbors = {}
-        self.robots = set()
+class OrientedRobot(Robot):
+    def __init__(self, rid, node):
+        super().__init__(rid, node)
+        self.program = self.travel_to_min_corner
 
-    def degree(self):
-        return len(self.neighbors)
+    def travel_to_min_corner(self):
+        match self.node.degree():
+            case 2:
+                self.program = self.count_n
+            case 3 | 4:
+                self.deferred = lambda: self.move(
+                        self.get_min_corner_direction()[1])
 
-class Robot:
-    def __init__(self, rid):
-        self.rid = rid
-        self.memory = {}
+    def get_min_corner_direction(self):
+        return min(self.node.neighbors.items(), key = lambda p: p[0])
 
-        self.memory["CYCLE"] = 0
+    def choose_min_corner_direction(self):
+        if "MIN" not in self.memory:
+            self.memory["MIN"] = self.get_min_corner_direction()[0]
+        return self.memory["MIN"]
 
-    def execute(self, program, current_node):
-        program(self, current_node)
-        self.memory["CYCLE"] += 1
+    # count the size of the grid from one corner to another
+    def count_n(self):
+        if "N" in self.memory:
+            # wait until 3n so every robot is finished with this phase
+            if self.elapsed() >= self.memory["N"] * 3:
+                self.set_checkpoint()
+                self.program = self.disperse_to_corners
+            return
 
-class World:
-    def __init__(self, grid, robots):
-        self.grid = grid
-        self.robots = robots
+        if "TMP" not in self.memory:
+            self.memory["TMP"] = self.memory["CYCLE"]
+        elif self.node.degree() == 2:
+            self.memory["N"] = self.memory["CYCLE"] - self.memory["TMP"] + 1
+            del self.memory["TMP"]
+            return
 
-    def cycle(self, program):
-        pairs = [(robot, node) for node in grid_to_nodes(self.grid)
-                 for robot in node.robots]
+        self.deferred = lambda: self.move(self.node.neighbors[self.choose_min_corner_direction()])
 
-        # simulate paralell execution because spawning threads costs too much
-        random.shuffle(pairs)
+    def disperse_to_corners(self):
+        n = self.memory["N"]
 
-        for robot, node in pairs:
-            robot.execute(program, node)
+        if self.elapsed() >= 4 * n:
+            if "DIR" in self.memory:
+                del self.memory["DIR"]
+            self.set_checkpoint()
+            self.program = self.disperse_to_columns
+            return
 
-        # with ThreadPoolExecutor() as executor:
-        #     for robot, node in pairs:
-        #         executor.submit(robot.execute, program, node)
+        if self.node.degree() == 2:
+            if len(self.node.robots) <= n * n / 4:
+                return
 
-def generate_oriented_grid(n):
-    view = [[Node() for _ in range(n)] for _ in range(n)]
-    columns = [[view[j][i] for j in range(n)] for i in range(n)]
+            if self.decide_if_staying_in_corner():
+                return
 
-    for row in view:
-        for left, right in zip(row, row[1:]):
-            left.neighbors[3] = right
-            right.neighbors[1] = left
+            # move in a circle
+            self.memory["DIR"] = self.get_circle_direction()
 
-    for column in columns:
-        for up, down in zip(column, column[1:]):
-            up.neighbors[2] = down
-            down.neighbors[4] = up
+        self.deferred = lambda: self.move(self.node.neighbors[self.memory["DIR"]])
 
-    return view
+    def get_circle_direction(self):
+            match sorted(self.node.neighbors.keys()):
+                case [2, 3]:
+                    return 3
+                case [1, 2]:
+                    return 2
+                case [1, 4]:
+                    return 1
+                case [3, 4]:
+                    return 4
 
-def grid_to_nodes(grid):
-    return [node for row in grid for node in row]
+    def decide_if_staying_in_corner(self):
+        n = self.memory["N"]
 
-def drop_robots_on_grid(grid, robots):
-    nodes = grid_to_nodes(grid)
+        ids = sorted([robot.rid for robot in self.node.robots])
+        max_to_stay = ids[:n*n//4][-1]
 
-    for robot in robots:
-        random.choice(nodes).robots.add(robot)
+        return self.rid <= max_to_stay
 
-def next_node_toward_min_edge(node):
-    _, next_node = min(node.neighbors.items(), key = lambda p: p[0])
-    return next_node
+    def disperse_to_columns(self):
+        if "DIR" not in self.memory:
+            self.memory["DIR"] = self.get_circle_direction()
 
-def next_node_toward_max_edge(node):
-    edge, next_node = max(node.neighbors.items(), key = lambda p: p[0])
-    return edge, next_node
+        if self.elapsed() >= self.memory["N"] // 2:
+            self.set_checkpoint()
+            self.program = self.disperse_to_rows
+            return
 
-def robot_move_to_corner(robot, current_node):
-    match current_node.degree():
-        case 3 | 4:
-            # move toward minimum edge
-            _, next_node = next_node_toward_min_edge(current_node)
-            current_node.robots.remove(robot)
-            next_node.robots.add(robot)
+        if self.decide_if_staying_in_column():
+            return
 
-def robot_count_to_other_corner(robot, current_node):
-    if "N" in robot.memory:
-        return # already calculated
+        self.deferred = lambda: self.move(self.node.neighbors[self.memory["DIR"]])
 
-    if "TMP" not in robot.memory:
-        robot.memory["TMP"] = robot.memory["CYCLE"]
-    elif current_node.degree() == 2:
-        robot.memory["N"] = robot.memory["CYCLE"] - robot.memory["TMP"] + 1
-        del robot.memory["TMP"]
-        return
+    def decide_if_staying_in_column(self):
+        n = self.memory["N"]
+        q = n * n // 4
+        c = q // (n // 2)
 
-    edge, next_node = next_node_toward_max_edge(current_node)
-    current_node.robots.remove(robot)
-    next_node.robots.add(robot)
+        ids = sorted([robot.rid for robot in self.node.robots])
+        max_to_stay = ids[:c][-1]
 
-def robot_decide_if_staying_in_corner(robot, current_node):
-    n = robot.memory["N"]
+        return self.rid <= max_to_stay
 
-    ids = sorted([robot.rid for robot in current_node.robots])
-    max_to_stay = ids[:n*n//4][-1]
+    def row_dir(self):
+        return 4 if self.memory["DIR"] == 1 else self.memory["DIR"] - 1
 
-    robot.memory["STAY"] = robot.rid <= max_to_stay
+    def disperse_to_rows(self):
+        ids = sorted([robot.rid for robot in self.node.robots])
 
-def print_grid_population(grid):
-    for row in grid:
-        print("\t".join(str(len(node.robots)) for node in row))
-    print()
+        if ids[0] == self.rid:
+            # stay
+            return
+
+        self.deferred = lambda: self.move(self.node.neighbors[self.row_dir()])
+
 
 if __name__ == '__main__':
-    n = 4
-    k = n * n
+    n = 10
+    world = World(n, OrientedRobot)
 
-    grid = generate_oriented_grid(n)
-    robots = [Robot(i) for i in range(k)]
+    world.print()
 
-    drop_robots_on_grid(grid, robots)
+    for i in range(n + n):
+        world.cycle()
 
-    world = World(grid, robots)
+    for i in range(n):
+        world.cycle()
 
-    print_grid_population(grid)
+    for i in range(4 * n):
+        world.cycle()
 
-    for _ in range(2 * n):
-        world.cycle(robot_move_to_corner)
+    a = len(world.grid[0][0].robots)
+    b = len(world.grid[0][n-1].robots)
+    c = len(world.grid[n-1][0].robots)
+    d = len(world.grid[n-1][n-1].robots)
 
-    print_grid_population(grid)
+    assert len({a, b, c, d}) == 1 if n // 2 == 0 else 2
 
-    for _ in range(n):
-        world.cycle(robot_count_to_other_corner)
+    world.print()
 
-    print_grid_population(grid)
+    while True:
+        world.cycle()
+        world.print()
+        input()
 
-    world.cycle(robot_decide_if_staying_in_corner)
-
-    print(len(list(filter(lambda r: r.memory["STAY"], grid[0][n-1].robots))))
-    print(list(robot.memory["N"] for robot in robots))
 
