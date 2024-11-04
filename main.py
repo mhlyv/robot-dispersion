@@ -9,15 +9,14 @@ import sys
 
 pygame.init()
 screen = pygame.display.set_mode((500, 500), RESIZABLE)
-font = pygame.font.Font(None, 36)
+font = pygame.font.Font(None, 22)
 cycle_event = USEREVENT + 45
 
-FPS = 10
+FPS = 18
 fps_clock = pygame.time.Clock()
 clock = pygame.time.Clock()
-pygame.key.set_repeat(1, 40)
 
-n = 10
+n = 17
 world = World(n, OrientedRobot)
 
 def draw_world(screen, world):
@@ -29,9 +28,7 @@ def draw_world(screen, world):
         for col in range(world.n):
             n_robots = len(world.grid[row][col].robots)
 
-            color = (int(255 * (n_robots / (n * n)))) * 3
-
-            print(color)
+            color = (int(255 * (n_robots / (n * n))),) * 3
 
             pygame.draw.rect(screen, color, pygame.Rect(col * grid_size, row * grid_size, grid_size, grid_size))
 
@@ -40,14 +37,21 @@ def draw_world(screen, world):
                 text_rect = text.get_rect(center=(col * grid_size + grid_size // 2, row * grid_size + grid_size // 2))
                 screen.blit(text, text_rect)
 
+run = False
+
 while True:
     for event in pygame.event.get():
         match event.type:
             case pygame.QUIT:
                 pygame.quit()
                 sys.exit()
+            case pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    run = not run
 
-    world.cycle()
+    if run:
+        world.cycle()
+
     draw_world(screen, world)
     pygame.display.flip()
     pygame.display.update()
