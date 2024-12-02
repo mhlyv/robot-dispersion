@@ -47,6 +47,7 @@ class World:
         self.k = n * n
         self.grid = generate_oriented_grid(n)
         self.robots = drop_robots_on_grid(self.grid, self.k, robot_type)
+        self.steps = 0
 
     def cycle(self):
         for robot in self.robots:
@@ -55,10 +56,34 @@ class World:
         for robot in self.robots:
             robot.execute()
 
+        if random.random() < 0.1:
+            random.shuffle(self.robots)
+            r = self.robots.pop()
+            r.node.robots.remove(r)
+
+        self.steps += 1
+
+    def done(self):
+        for r in self.robots:
+            if "DONE" not in r.memory:
+                return False
+        return True
+
     def print(self):
         for row in self.grid:
             print("\t".join(str(len(node.robots)) for node in row))
         print()
+
+class UnorientedWorld(World):
+    def __init__(self, n, robot_type):
+        super().__init__(n, robot_type)
+        self.grid = [[self.shuffle_neighbors(node) for node in row] for row in self.grid]
+
+    def shuffle_neighbors(self, node):
+        neighbors = list(node.neighbors.values())
+        random.shuffle(neighbors)
+        node.neighbors = dict(zip([1, 2, 3, 4], neighbors))
+        return node
 
 def generate_oriented_grid(n):
     view = [[Node() for _ in range(n)] for _ in range(n)]
@@ -85,6 +110,18 @@ def drop_robots_on_grid(grid, k, robot_type):
 
     for i in range(k):
         node = random.choice(nodes)
+        robot = robot_type(i, node)
+        node.robots.add(robot)
+        robots.append(robot)
+
+    return robots
+
+def drop_robots_in_middle(grid, robot_type, n):
+    mid = len(grid)//2
+    node = grid[mid][mid]
+    robots = []
+
+    for i in range(n):
         robot = robot_type(i, node)
         node.robots.add(robot)
         robots.append(robot)

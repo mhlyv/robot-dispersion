@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 import lib
-from lib import World
+from lib import World, UnorientedWorld
 from orientedrobot import OrientedRobot
+from unorientedrobot import UnorientedRobot
 import pygame
 from pygame.locals import *
 import sys
@@ -12,12 +13,13 @@ screen = pygame.display.set_mode((500, 500), RESIZABLE)
 font = pygame.font.Font(None, 22)
 cycle_event = USEREVENT + 45
 
-FPS = 18
+FPS = 1000
 fps_clock = pygame.time.Clock()
 clock = pygame.time.Clock()
 
-n = 17
-world = World(n, OrientedRobot)
+n = 20
+# world = World(n, OrientedRobot)
+world = UnorientedWorld(n, UnorientedRobot)
 
 def draw_world(screen, world):
     screen.fill((0, 0, 0))
@@ -50,7 +52,12 @@ while True:
                     run = not run
 
     if run:
-        world.cycle()
+        if not world.done():
+            world.cycle()
+        else:
+            print(world.steps)
+            print(world.steps / world.n)
+            run = False
 
     draw_world(screen, world)
     pygame.display.flip()

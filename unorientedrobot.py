@@ -1,0 +1,215 @@
+#!/usr/bin/env python3
+
+import lib
+from lib import Node, Robot, World
+import math
+import random
+
+class UnorientedRobot(Robot):
+    def __init__(self, rid, node):
+        super().__init__(rid, node)
+        self.program = self.find_corner
+
+    def find_corner(self):
+        if len(self.node.robots) == 1:
+            self.memory["DONE"] = True
+        elif "DONE" not in self.memory:
+            self.deferred = lambda: self.move(random.choice(list(self.node.neighbors.values())))
+
+#     def travel_to_min_corner(self):
+#         match self.node.degree():
+#             case 2:
+#                 self.program = self.count_n
+#             case 3 | 4:
+#   self.deferred = lambda: self.move(
+#                         self.get_min_corner_direction()[1])
+# 
+#     def get_min_corner_direction(self):
+#         return min(self.node.neighbors.items(), key = lambda p: p[0])
+# 
+#     def choose_min_corner_direction(self):
+#         if "MIN" not in self.memory:
+#             self.memory["MIN"] = self.get_min_corner_direction()[0]
+#         return self.memory["MIN"]
+# 
+#     # count the size of the grid from one corner to another
+#     def count_n(self):
+#         if "N" in self.memory:
+#             # wait until 3n so every robot is finished with this phase
+#             if self.elapsed() >= self.memory["N"] * 3:
+#                 del self.memory["MIN"]
+#                 self.set_checkpoint()
+# 
+#                 if self.memory["N"] % 2 == 0:
+#                     self.program = self.disperse_to_corners
+#                 else:
+#                     self.program = self.move_to_boundary_centre
+#             return
+# 
+#         if "TMP" not in self.memory:
+#             self.memory["TMP"] = self.memory["CYCLE"]
+#         elif self.node.degree() == 2:
+#             self.memory["N"] = self.memory["CYCLE"] - self.memory["TMP"] + 1
+#             del self.memory["TMP"]
+#             return
+# 
+#         self.deferred = lambda: self.move(self.node.neighbors[self.choose_min_corner_direction()])
+# 
+#     def disperse_to_corners(self):
+#         n = self.memory["N"]
+# 
+#         if self.elapsed() >= 3 * n:
+#             if "DIR" in self.memory:
+#                 del self.memory["DIR"]
+#             self.set_checkpoint()
+#             self.program = self.disperse_to_columns
+#             return
+# 
+#         if self.node.degree() == 2:
+#             if len(self.node.robots) <= n * n / 4:
+#                 return
+# 
+#             if self.decide_if_staying_in_corner():
+#                 return
+# 
+#             # move in a circle
+#             self.memory["DIR"] = self.get_circle_direction()
+# 
+#         self.deferred = lambda: self.move(self.node.neighbors[self.memory["DIR"]])
+# 
+#     def get_circle_direction(self):
+#             match sorted(self.node.neighbors.keys()):
+#                 case [2, 3]:
+#                     return 3
+#                 case [1, 2]:
+#                     return 2
+#                 case [1, 4]:
+#                     return 1
+#                 case [3, 4]:
+#                     return 4
+# 
+#     def decide_if_staying_in_corner(self):
+#         n = self.memory["N"]
+# 
+#         ids = sorted([robot.rid for robot in self.node.robots])
+#         max_to_stay = ids[:n*n//4][-1]
+# 
+#         return self.rid <= max_to_stay
+# 
+#     def disperse_to_columns(self):
+#         if "DIR" not in self.memory:
+#             self.memory["DIR"] = self.get_circle_direction()
+# 
+#         if self.elapsed() >= self.memory["N"] // 2:
+#             self.set_checkpoint()
+#             self.program = self.disperse_to_rows
+#             return
+# 
+#         if self.decide_if_staying_in_column():
+#             return
+# 
+#         self.deferred = lambda: self.move(self.node.neighbors[self.memory["DIR"]])
+# 
+#     def decide_if_staying_in_column(self):
+#         n = self.memory["N"]
+#         q = n * n // 4
+#         c = q // (n // 2)
+# 
+#         ids = sorted([robot.rid for robot in self.node.robots])
+#         max_to_stay = ids[:c][-1]
+# 
+#         return self.rid <= max_to_stay
+# 
+#     def row_dir(self):
+#         return 4 if self.memory["DIR"] == 1 else self.memory["DIR"] - 1
+# 
+#     def disperse_to_rows(self):
+#         ids = sorted([robot.rid for robot in self.node.robots])
+# 
+#         if ids[0] == self.rid:
+#             self.program = lambda: None
+#             return
+# 
+#         self.deferred = lambda: self.move(self.node.neighbors[self.row_dir()])
+# 
+#     def move_to_boundary_centre(self):
+#         n = self.memory["N"]
+# 
+#         if self.elapsed() >= math.ceil(n / 2):
+#             del self.memory["MIN"]
+#             self.set_checkpoint()
+#             self.program = self.move_to_centre
+#             return
+# 
+#         self.deferred = lambda: self.move(self.node.neighbors[self.choose_min_corner_direction()])
+# 
+#     def move_to_centre(self):
+#         n = self.memory["N"]
+# 
+#         if "DIR" not in self.memory:
+#             self.memory["DIR"] = ((1 + 2 + 3 + 4 + 2) - sum(self.node.neighbors.keys())) % 5
+# 
+#         if self.elapsed() >= math.ceil(n / 2):
+#             del self.memory["DIR"]
+#             self.set_checkpoint()
+#             self.program = self.move_from_centre_to_corner
+#             return
+# 
+#         self.deferred = lambda: self.move(self.node.neighbors[self.memory["DIR"]])
+# 
+#     def move_from_centre_to_corner(self):
+#         if self.elapsed() >= self.memory["N"]:
+#             self.set_checkpoint()
+#             self.program = self.disperse_from_min_corner
+#             return
+#         
+#         self.deferred = lambda: self.move(self.get_min_corner_direction()[1])
+# 
+#     def disperse_from_min_corner(self):
+#         n = self.memory["N"]
+#         rids = sorted([robot.rid for robot in self.node.robots])
+# 
+#         if self.elapsed() == 2 * n:
+#             self.program = lambda: None
+#             return
+# 
+#         if len(rids) <= n:
+#             if self.rid != rids[0]:
+#                 self.deferred = lambda: self.move(self.node.neighbors[4])
+#             # go up
+#         else:
+#             max_to_stay = rids[n - 1]
+#             if self.rid > max_to_stay:
+#                 self.deferred = lambda: self.move(self.node.neighbors[3])
+# 
+# 
+# if __name__ == '__main__':
+#     n = 10
+#     world = World(n, OrientedRobot)
+# 
+#     world.print()
+# 
+#     for i in range(n + n):
+#         world.cycle()
+# 
+#     for i in range(n):
+#         world.cycle()
+# 
+#     for i in range(4 * n):
+#         world.cycle()
+# 
+#     a = len(world.grid[0][0].robots)
+#     b = len(world.grid[0][n-1].robots)
+#     c = len(world.grid[n-1][0].robots)
+#     d = len(world.grid[n-1][n-1].robots)
+# 
+#     assert len({a, b, c, d}) == 1 if n // 2 == 0 else 2
+# 
+#     world.print()
+# 
+#     while True:
+#         world.cycle()
+#         world.print()
+#         input()
+# 
+# 
